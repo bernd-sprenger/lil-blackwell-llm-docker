@@ -1,0 +1,9 @@
+# BuildKit worker for the lil-wheel-cu134-sm120 builder on Babbler. Same
+# role as the recipe's tools/jovian_wheel_runtime/buildkitd.toml, with GC
+# limits sized for Babbler's 251 GB Docker disk instead of LIL's build host
+# (1 TB used / 500 GB kept free). The NGC foundation alone is ~25 GB.
+[worker.oci]
+  gc = true
+  reservedSpace = "40GB"
+  maxUsedSpace = "150GB"
+  minFreeSpace = "40GB"

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Stand-in for `gh api` so Local Inference Lab's build tools run unmodified
+# without a GitHub login: an anonymous GET against api.github.com (everything
+# they read is public). GITHUB_TOKEN, if set, lifts the 60 requests/hour
+# anonymous limit.
+#
+# Supports exactly the form the tools use: gh api ENDPOINT [-H HEADER]...
+set -euo pipefail
+
+if [[ "${1-}" != api || $# -lt 2 ]]; then
+    echo "gh shim: only 'gh api ENDPOINT [-H HEADER]...' is supported" >&2
+    exit 2
+fi
+endpoint=$2
+shift 2
+
+headers=(-H "X-GitHub-Api-Version: 2022-11-28")
+while (($#)); do
+    case "$1" in
+        -H) headers+=(-H "$2"); shift 2 ;;
+        *) echo "gh shim: unsupported argument: $1" >&2; exit 2 ;;
+    esac
+done
+if [[ -n "${GITHUB_TOKEN-}" ]]; then
+    headers+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+exec curl -fsSL --retry 3 "${headers[@]}" "https://api.github.com/${endpoint#/}"
