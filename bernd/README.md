@@ -134,11 +134,12 @@ It runs the stock-LMCache MP server as a background child of the container
 
 Naming lineage: `kk-20261120-cb2` was the stock-LMCache image as first
 built (2-container shape); the combined entrypoint supersedes it, so the
-registry tag moves to the combined manifest — `kk-20261120-cb2-test1`
-during qualification, retargeted to `kk-20261120-cb2` (plain push over
-the tag) once it passes. The old cb2 version then sits untagged in GHCR
-until deleted in the packages UI (the stored PAT has no delete:packages
-scope). Babbler keeps the old cb2 image locally as the build BASE.
+tag now points at the combined manifest (qualifed 2026-11-20, recipe
+8e39d5d: L1 reload 2.3s, L2-from-NVMe 6.2s after a full restart, cold
+36.1s @109K prompt tokens; MTP, LoRA identity and image input verified).
+`kk-20261120-cb2-test1` is an alias for the same manifest (GHCR can't
+delete single tags without the user packages UI). Babbler keeps the
+original 2-container-era cb2 image locally as the build BASE.
 
 This is LIL's own deployment shape, and it exists because the two-container
 alternative is a dead end on this stack: `lmcache_driven` (CUDA IPC)
