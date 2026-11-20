@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# lil-mp-launcher: the combined (LIL-pattern) container entrypoint for
+# cb3-class images — the stock-LMCache MP server and the vLLM engine in
+# ONE container.
+#
+# Why one container: cross-container CUDA IPC (lmcache_driven transfer)
+# needs shared /dev/shm, and even with ipc:host on both, the server holds
+# IPC handles into the engine's KV tensors — an engine-only restart cannot
+# re-allocate its VRAM until the server dies too. One container gives one
+# /dev/shm and one lifecycle; the server is a child of the entrypoint.
+#
+# Flow: start `lmcache server` as a background child (L1 = host RAM, L2 =
+# NVMe under /l2), wait for its HTTP health endpoint, then exec `vllm
+# serve` with the caller's args plus a LMCacheMPConnector pointing at
+# tcp://localhost:$PORT — unless the caller passes their own
+# --kv-transfer-config (then theirs wins; the server stays up regardless).
+#
+# Knobs (environment):
+#   LMCACHE_L1_GB         L1 (host RAM) tier size, GiB   (default 32)
+#   LMCACHE_L2_GB         L2 (NVMe) tier cap, GiB        (default 160)
+#   LMCACHE_PORT          server ZMQ port                (default 5555)
+#   LMCACHE_METRICS_PORT  server HTTP port (health)      (default 8080)
+#
+# The deployment mounts the NVMe tier at /l2 (LMCACHE_LOCAL_DISK below)
+# and sizes the container's shm to hold the transfer buffers.
+set -euo pipefail
+
+L1_GB="${LMCACHE_L1_GB:-32}"
+L2_GB="${LMCACHE_L2_GB:-160}"
+PORT="${LMCACHE_PORT:-5555}"
+METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
+
+# --- stock-LMCache MP server (background child) -----------------------------
+# Chunk size is a minimum; the connector negotiates up to the engine's
+# attention page. Object-group separation stays on (default): hybrid GDN
+# recurrent states cache as their own object group.
+LMCACHE_LOCAL_DISK=/l2 \
+LMCACHE_MAX_LOCAL_DISK_SIZE="$L2_GB" \
+lmcache server \
+    --host 127.0.0.1 --port "$PORT" \
+    --supported-transfer-mode auto \
+    --l1-size-gb "$L1_GB" \
+    --eviction-policy LRU &
+LMCACHE_PID=$!
+trap 'kill "$LMCACHE_PID" 2>/dev/null || true' EXIT
+
+# Wait for the server's HTTP health endpoint so the engine never races it.
+READY=0
+for _ in $(seq 1 60); do
+    if curl -sf "http://127.0.0.1:$METRICS_PORT/health" >/dev/null 2>&1; then
+        READY=1
+        break
+    fi
+    sleep 2
+done
+if [[ "$READY" == 1 ]]; then
+    echo "lmcache-server ready on :$PORT (pid $LMCACHE_PID, L1=${L1_GB} GiB, L2=${L2_GB} GiB)"
+else
+    echo "WARNING: lmcache-server not healthy on :$METRICS_PORT after 120s; continuing —" \
+         "the engine fails at connector registration if it needs the server" >&2
+fi
+
+# --- vLLM engine ------------------------------------------------------------
+# Inject the MP connector only when the caller does not bring their own.
+has_kvtc=0
+for a in "$@"; do
+    if [[ "$a" == "--kv-transfer-config" ]]; then
+        has_kvtc=1
+    fi
+done
+if [[ "$has_kvtc" == 0 ]]; then
+    set -- vllm serve \
+        --kv-transfer-config "{\"kv_connector\":\"LMCacheMPConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"lmcache.mp.host\":\"tcp://localhost\",\"lmcache.mp.port\":$PORT}}" \
+        "$@"
+else
+    set -- vllm serve "$@"
+fi
+
+# exec: vLLM replaces this shell, becomes the container's main process and
+# receives its signals; the lmcache child dies with the PID namespace when
+# the container stops.
+exec "$@"

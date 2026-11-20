@@ -122,6 +122,36 @@ bundle's `source.upstream` marker): no fork files leak in, no fetch 404s.
 
 Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
 
+## Combined launcher (cb3)
+
+`build_combined.sh` builds the cb3 image: a cb2 base plus ONE thin layer
+that bakes in `combined-launcher/lil-mp-launcher` as the entrypoint. It
+runs the stock-LMCache MP server as a background child of the container
+(L1 host RAM / L2 NVMe under `/l2`, sized by `LMCACHE_L1_GB` /
+`LMCACHE_L2_GB`), waits for the server's health endpoint, then execs
+`vllm serve` with the caller's args and — unless the args bring their own
+`--kv-transfer-config` — a `LMCacheMPConnector` at `tcp://localhost:5555`.
+
+This is LIL's own deployment shape, and it exists because the two-container
+alternative is a dead end on this stack: `lmcache_driven` (CUDA IPC)
+transfer needs shared `/dev/shm`, and even with `ipc: host` on both
+containers the server keeps IPC handles into the engine's KV tensors —
+after an engine-only restart the engine cannot re-allocate its VRAM (the
+server pins ~53 GiB of the dead engine's memory) and crash-loops until the
+server restarts too. One container makes the pair one lifecycle; the
+supervisor script stops being per-deployment compose boilerplate and
+becomes part of the image, so any engine (qwen38-27b today, glm53-flash
+next) gets the tiered cache by just passing model args.
+
+```
+IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb3 \
+PUSH=1 bernd/build_combined.sh     # on Babbler; cb2 must be present
+```
+
+A deployment then only mounts `/l2`, sets the two tier knobs, sizes
+`shm_size`, and passes `vllm serve` args as the compose `command:` —
+no `entrypoint:` override, no inline supervisor script.
+
 ## Updating
 
 - **New LIL release:** merge its recipe commit into this branch, and take the
