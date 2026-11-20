@@ -67,6 +67,45 @@ every component's source commit. `gh-shim/gh` answers the `gh api` calls in
 LIL's tools with anonymous curl, so no GitHub login is needed.
 `buildkitd.toml` sizes BuildKit's garbage collection for Babbler.
 
+## Stock LMCache (cb2 recipe)
+
+The assembly's LMCache is LIL's fork
+(`0.5.3.dev457+lil`, forked from upstream 2026-08-30): frozen before upstream's
+hybrid-GDN maturity train — the Qwen3.8-27B recipe landed in 0.5.5, Mamba
+full-hit restoration and the MTP scratch-block fix in 0.5.6, engine-driven
+multi-group transfers in 0.5.7. The upstream release wheels cannot simply be
+pip-installed over it: they are built against *stable* torch 2.14.0 while this
+foundation is the NGC alpha `2.14.0a0+nv26.08`, and their `cuda_ops` fails to
+load (verified against v0.5.7.post1: undefined symbol
+`_ZN3c104cuda19CUDAErrorLogCaptureC1Ev`). The fork's vLLM side anticipated a
+swap, though: its `LMCacheMPConnector` resolver prefers
+`LMCACHE_USE_UPSTREAM_MP=1` / falls back to a builtin upstream connector.
+
+`bernd/stock-lmcache/` therefore rebuilds STOCK upstream LMCache — LIL's own
+Dockerfile, builder image, toolchain pins and wheel normalization over an
+unmodified upstream tag — and packages it in the assembly's bundle envelope.
+The engine side then uses vLLM's builtin connector via `LMCACHE_USE_UPSTREAM_MP=1`
+(or the ImportError fallback). LIL's runtime cache service (the `+lil`
+engine-driven path glm53-flash uses) is NOT preserved by this: deployments
+needing it stay on an image with the `+lil` bundle.
+
+```
+# On Babbler, from a clean checkout of this branch:
+bernd/stock-lmcache/build_bundle.sh /opt/data/build/lil-image/lmcache-stock
+LMCACHE_BUNDLE=/opt/data/build/lil-image/lmcache-stock/bundle \
+IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261220-cb2 \
+PUSH=1 bernd/build.sh
+```
+
+`LMCACHE_BUNDLE` drops the assembly's lmcache component from the download and
+substitutes the bundle; the `BUILT` record and the image description carry the
+stock provenance (tag, commit, `package_version` like
+`0.5.7.post1+bernd.cu134.g<sha>`). The cuMem interposer source that
+`build_local_runtime.py` packages is pre-seeded into the component cache from
+upstream at the same commit, because LIL's fetcher only knows its own fork.
+
+Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
+
 ## Updating
 
 - **New LIL release:** merge its recipe commit into this branch, and take the

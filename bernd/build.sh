@@ -7,6 +7,10 @@
 #   WORK   build tree, caches included (default /opt/data/build/lil-image)
 #   IMAGE  tag to build (default ghcr.io/bernd-sprenger/lil-vllm:kk-20261020-cb1)
 #   PUSH   1 pushes IMAGE after the build (needs docker login ghcr.io)
+#   LMCACHE_BUNDLE  replace the assembly's +lil LMCache with a bundle built
+#          by bernd/stock-lmcache/build_bundle.sh (stock upstream source,
+#          rebuilt for this foundation). The assembly's lmcache component is
+#          then dropped from the download.
 #
 # Needs: docker with buildx, git, curl, python3, zstd, jq, unzip.
 set -euo pipefail
@@ -16,6 +20,7 @@ RECIPE="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORK="${WORK:-/opt/data/build/lil-image}"
 IMAGE="${IMAGE:-ghcr.io/bernd-sprenger/lil-vllm:kk-20261020-cb1}"
 PUSH="${PUSH:-0}"
+LMCACHE_BUNDLE="${LMCACHE_BUNDLE:-}"
 
 # LIL's canonical karmic-kraken-20261020: the assembly lock that pins every
 # component bundle by release asset ID and sha256. This branch is LIL's
@@ -68,14 +73,22 @@ echo "Build tree: $RUN"
 
 # --- Assembly lock: verify, then drop the InstantTensor entry (built below).
 # vLLM stays: its bundle is the native base for our Python-only build.
+# LMCache drops too when LMCACHE_BUNDLE replaces it with a stock build.
 gh api "repos/local-inference-lab/blackwell-llm-docker/releases/tags/$ASSEMBLY_TAG" \
     | jq -r '.assets[] | select(.name == "community-assembly.json") | .id' \
     > "$RUN/assembly-asset-id"
 gh api "repos/local-inference-lab/blackwell-llm-docker/releases/assets/$(cat "$RUN/assembly-asset-id")" \
     -H "Accept: application/octet-stream" > "$RUN/community-assembly.json"
 echo "$ASSEMBLY_SHA256  $RUN/community-assembly.json" | sha256sum --check --quiet
-jq 'del(.components.instanttensor)' "$RUN/community-assembly.json" \
+jq --arg stock "${LMCACHE_BUNDLE}" \
+   'del(.components.instanttensor)
+    | (if $stock == "" then . else del(.components.lmcache) end)' \
+    "$RUN/community-assembly.json" \
     > "$RUN/assembly-without-instanttensor.json"
+if [[ -n "$LMCACHE_BUNDLE" && ! -d "$LMCACHE_BUNDLE" ]]; then
+    echo "error: LMCACHE_BUNDLE=$LMCACHE_BUNDLE is not a directory" >&2
+    exit 1
+fi
 
 # --- LIL's bundles, through LIL's own verified download (asset IDs, archive
 # and manifest sha256 from the lock).
@@ -119,16 +132,20 @@ python3 "$TOOLS/build_local_runtime.py" \
     --nccl-bundle "$RUN/bundles/nccl" \
     --flashinfer-bundle "$RUN/bundles/flashinfer" \
     --vllm-bundle "$RUN/vllm/bundle" \
-    --lmcache-bundle "$RUN/bundles/lmcache" \
+    --lmcache-bundle "${LMCACHE_BUNDLE:-$RUN/bundles/lmcache}" \
     --instanttensor-bundle "$RUN/instanttensor/bundle"
 
 # --- OCI labels (metadata only, no new layer): GHCR links the package to
 # this repository through image.source.
+DESCRIPTION="LIL karmic-kraken-20261020 with vLLM $VLLM_COMMIT and InstantTensor $INSTANTTENSOR_COMMIT from bernd-sprenger forks"
+if [[ -n "$LMCACHE_BUNDLE" ]]; then
+    DESCRIPTION="$DESCRIPTION, stock LMCache $(jq -r .package_version "$LMCACHE_BUNDLE/manifest.json")"
+fi
 printf '%s\n' \
     "FROM $IMAGE" \
     "LABEL org.opencontainers.image.source=https://github.com/bernd-sprenger/lil-blackwell-llm-docker" \
     "LABEL org.opencontainers.image.revision=$RECIPE_COMMIT" \
-    "LABEL org.opencontainers.image.description=\"LIL karmic-kraken-20261020 with vLLM $VLLM_COMMIT and InstantTensor $INSTANTTENSOR_COMMIT from bernd-sprenger forks\"" \
+    "LABEL org.opencontainers.image.description=\"$DESCRIPTION\"" \
     | docker build -q -t "$IMAGE" - >/dev/null
 
 # --- Record what was built.
@@ -142,6 +159,10 @@ printf '%s\n' \
         "$RUN/assembly-without-instanttensor.json"
     echo "vllm=$VLLM_COMMIT ($VLLM_REPO $VLLM_BRANCH, native bundle $(jq -r .source.commit "$RUN/bundles/vllm/manifest.json"))"
     echo "instanttensor=$INSTANTTENSOR_COMMIT ($INSTANTTENSOR_REPO $INSTANTTENSOR_BRANCH)"
+    if [[ -n "$LMCACHE_BUNDLE" ]]; then
+        echo "lmcache=STOCK $(jq -r '.source.upstream + " " + .source.commit + " (" + .package_version + ")"' \
+            "$LMCACHE_BUNDLE/manifest.json")"
+    fi
     echo "runtime_manifest_sha256=$(sha256sum "$RUN/runtime/runtime/manifest.json" | cut -d' ' -f1)"
 } | tee "$RUN/BUILT"
 
