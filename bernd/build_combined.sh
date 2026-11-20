@@ -6,7 +6,7 @@
 #
 # Usage (from a clean checkout of this branch): bernd/build_combined.sh
 #   BASE   base image (default ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2)
-#   IMAGE  tag to build (default ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb3)
+#   IMAGE  tag to build (default ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2-test1)
 #   PUSH   1 pushes IMAGE after the build
 #
 # Needs: docker with buildx (or legacy builder — no advanced syntax), git.
@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECIPE="$(cd "$SCRIPT_DIR/.." && pwd)"
 BASE="${BASE:-ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2}"
-IMAGE="${IMAGE:-ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb3}"
+IMAGE="${IMAGE:-ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2-test1}"
 PUSH="${PUSH:-0}"
 
 # The image records the recipe commit, so build only committed recipes.

@@ -122,15 +122,23 @@ bundle's `source.upstream` marker): no fork files leak in, no fetch 404s.
 
 Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
 
-## Combined launcher (cb3)
+## Combined launcher (cb2-test1)
 
-`build_combined.sh` builds the cb3 image: a cb2 base plus ONE thin layer
-that bakes in `combined-launcher/lil-mp-launcher` as the entrypoint. It
-runs the stock-LMCache MP server as a background child of the container
+`build_combined.sh` builds the combined image: a cb2 base plus ONE thin
+layer that bakes in `combined-launcher/lil-mp-launcher` as the entrypoint.
+It runs the stock-LMCache MP server as a background child of the container
 (L1 host RAM / L2 NVMe under `/l2`, sized by `LMCACHE_L1_GB` /
 `LMCACHE_L2_GB`), waits for the server's health endpoint, then execs
 `vllm serve` with the caller's args and — unless the args bring their own
 `--kv-transfer-config` — a `LMCacheMPConnector` at `tcp://localhost:5555`.
+
+Naming lineage: `kk-20261120-cb2` was the stock-LMCache image as first
+built (2-container shape); the combined entrypoint supersedes it, so the
+registry tag moves to the combined manifest — `kk-20261120-cb2-test1`
+during qualification, retargeted to `kk-20261120-cb2` (plain push over
+the tag) once it passes. The old cb2 version then sits untagged in GHCR
+until deleted in the packages UI (the stored PAT has no delete:packages
+scope). Babbler keeps the old cb2 image locally as the build BASE.
 
 This is LIL's own deployment shape, and it exists because the two-container
 alternative is a dead end on this stack: `lmcache_driven` (CUDA IPC)
@@ -144,8 +152,8 @@ becomes part of the image, so any engine (qwen38-27b today, glm53-flash
 next) gets the tiered cache by just passing model args.
 
 ```
-IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb3 \
-PUSH=1 bernd/build_combined.sh     # on Babbler; cb2 must be present
+IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2-test1 \
+PUSH=1 bernd/build_combined.sh     # on Babbler; the base must be present
 ```
 
 A deployment then only mounts `/l2`, sets the two tier knobs, sizes
