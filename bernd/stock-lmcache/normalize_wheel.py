@@ -35,9 +35,18 @@ def rewrite_requirements(metadata: bytes, *, torch_version: str) -> bytes:
     found_torch = False
     for value in requirements:
         requirement = Requirement(value)
-        if canonicalize_name(requirement.name) == "torch":
+        name = canonicalize_name(requirement.name)
+        if name == "torch":
             rewritten.append(f"torch=={torch_version}")
             found_torch = True
+        elif name == "grpcio-observability":
+            # Stock LMCache pins grpcio-observability to the grpcio it was
+            # built against; the NGC venv ships a NEWER grpcio (1.83.x) and
+            # the exact match makes verify_installed_requirements reject the
+            # image. grpcio-observability tracks grpcio versions 1:1 with no
+            # API break inside a major line, so relax the pin to a range and
+            # let the overlay lock pick the version matching the venv.
+            rewritten.append("grpcio-observability>=1.78.0,<2")
         else:
             rewritten.append(value)
     if not found_torch:

@@ -8,7 +8,10 @@ torch-c-dlpack-ext==0.1.5 \
 setuptools==80.9.0 \
     --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922 \
     --hash=sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c
-# Stock LMCache (>=0.5.7) declares this gRPC telemetry dependency; the NGC
-# venv does not carry it. cp312 manylinux2014 x86_64 wheel hash.
-grpcio-observability==1.78.0 \
-    --hash=sha256:80ff6e088d8e21eb6d1228ea9193f7d1ab078ee8fc76ce81fd85f0b780f7a090
+# Stock LMCache (>=0.5.7) declares the gRPC telemetry stack; the NGC venv
+# does not carry grpcio-observability. normalize_wheel relaxes lmcache's
+# exact pin to >=1.78.0,<2, so pin here to the OBSERVABILITY version matching
+# the venv's grpcio 1.83.1 (grpcio-observability releases track grpcio 1:1).
+# cp312 manylinux2014 x86_64 wheel hashes.
+grpcio-observability==1.83.1 \
+    --hash=sha256:517cb2b5cac7b7b1c2f734b57db10678ddd9e146dc2220d73800ebc623b6ac2a
