@@ -16,6 +16,18 @@ def main() -> None:
     args = parser.parse_args()
     manifest = json.loads((args.bundle / "manifest.json").read_text())
     record = manifest["auxiliary"]["lmcache_cumem"]
+    if record.get("present") is False:
+        # Stock upstream LMCache: the fork-only cuMem interposer is
+        # intentionally absent (see prepare_runtime_auxiliary). Write the
+        # marker receipt so verify_qwen38_runtime can confirm the absence
+        # instead of looking for a library that was never built.
+        license_parent = Path("/opt/venv/share/lil-runtime")
+        license_parent.mkdir(parents=True, exist_ok=True)
+        (license_parent / "lmcache-cumem.json").write_text(
+            json.dumps(record, sort_keys=True, indent=2) + "\n"
+        )
+        print("lmcache_cumem=absent (stock upstream LMCache)")
+        return
     if record["commit"] != manifest["components"]["lmcache"]["source"]["commit"]:
         raise ValueError("cuMem source must match the installed LMCache wheel revision")
     source = args.bundle / "auxiliary/lmcache-cumem"

@@ -59,47 +59,11 @@ cp "$TOOLS/Dockerfile" "$TOOLS/build_wheel.sh" "$TOOLS/normalize_wheel.py" \
     "$TOOLS/build-requirements.lock" "$TOOLS/runtime.lock" \
     "$SRC/ci/lil_wheels/"
 
-# The runtime assembly later packages the cuMem interposer source and fetches
-# it from local-inference-lab/LMCache@<commit> (prepare_runtime_auxiliary.py),
-# which 404s for an upstream commit. Pre-seed its content-verified cache with
-# the same three files from upstream at the same commit instead.
-echo "-- Seeding the cuMem interposer cache from upstream"
-CUMEM_CACHE="$WORK/cache/components/lmcache-cumem-source/$SOURCE_COMMIT"
-if [[ ! -d "$CUMEM_CACHE" ]]; then
-    tmp=$(mktemp -d)
-    python3 - "$SOURCE_COMMIT" "$tmp" <<'PY'
-import base64
-import hashlib
-import json
-import sys
-import urllib.request
-
-commit, dest = sys.argv[1], sys.argv[2]
-files = {
-    "cumem_shareable_interposer.c": "csrc/cumem_ipc_interposer/cumem_shareable_interposer.c",
-    "Makefile": "csrc/cumem_ipc_interposer/Makefile",
-    "LICENSE": "LICENSE",
-}
-records = {}
-for name, path in files.items():
-    entry = json.load(urllib.request.urlopen(
-        f"https://api.github.com/repos/LMCache/LMCache/contents/{path}?ref={commit}"))
-    content = base64.b64decode(entry["content"])
-    blob = hashlib.sha1(
-        b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
-    if blob != entry["sha"]:
-        raise SystemExit(f"git blob checksum mismatch: {path}")
-    with open(f"{dest}/{name}", "wb") as f:
-        f.write(content)
-    records[name] = {"path": path, "git_blob": blob,
-                     "sha256": hashlib.sha256(content).hexdigest()}
-with open(f"{dest}/source.json", "w") as f:
-    json.dump({"repository": "LMCache/LMCache", "commit": commit,
-               "files": records}, f, sort_keys=True, indent=2)
-    f.write("\n")
-PY
-    mv "$tmp" "$CUMEM_CACHE"
-fi
+# The runtime assembly packages a cuMem interposer for the +lil engine-driven
+# cache path; upstream LMCache has no such component (csrc/cumem_ipc_interposer
+# is fork-only). This branch's prepare_runtime_auxiliary.py recognizes the
+# stock bundle's source.upstream marker and records the absence instead of
+# fetching fork-only files from a repository that does not contain the commit.
 
 BUILDER=$(lock_value buildx.builder)
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then

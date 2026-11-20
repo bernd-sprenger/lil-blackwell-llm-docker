@@ -375,17 +375,22 @@ def main() -> int:
         receipt = json.loads(
             (Path(sys.prefix) / "share/lil-runtime/lmcache-cumem.json").read_text()
         )
-        if receipt["commit"] != manifest["components"]["lmcache"]["source"]["commit"]:
-            raise RuntimeError(
-                "cuMem helper source differs from the installed LMCache wheel"
-            )
-        library = Path("/opt/lmcache/lib/liblmcache_cumem_shareable.so")
-        if (
-            receipt["library"] != str(library)
-            or not library.is_file()
-            or sha256(library) != receipt["sha256"]
-        ):
-            raise RuntimeError("LMCache cuMem helper hash contract mismatch")
+        if receipt.get("present") is False:
+            # Stock upstream LMCache build: the fork-only cuMem interposer
+            # is intentionally absent (prepare_runtime_auxiliary marked it).
+            print("lmcache_cumem=absent (stock upstream LMCache)")
+        else:
+            if receipt["commit"] != manifest["components"]["lmcache"]["source"]["commit"]:
+                raise RuntimeError(
+                    "cuMem helper source differs from the installed LMCache wheel"
+                )
+            library = Path("/opt/lmcache/lib/liblmcache_cumem_shareable.so")
+            if (
+                receipt["library"] != str(library)
+                or not library.is_file()
+                or sha256(library) != receipt["sha256"]
+            ):
+                raise RuntimeError("LMCache cuMem helper hash contract mismatch")
     else:
         runtime_site = Path(sys.prefix) / "lib/python3.12/site-packages"
         expected_cuda = (runtime_site / "nvidia/cu13").resolve()

@@ -30,6 +30,20 @@ def prepare(manifest: dict, output: Path, cache: Path) -> dict:
         raise ValueError(
             "cuMem interposer requires the immutable LMCache wheel source revision"
         )
+    declared = manifest["components"]["lmcache"].get("source")
+    if isinstance(declared, dict) and declared.get("upstream"):
+        # The cuMem shareable-interposer is a local-inference-lab fork
+        # addition (csrc/cumem_ipc_interposer does not exist upstream); it
+        # only serves the fork's engine-driven cache service. A bundle
+        # built from STOCK upstream LMCache declares source.upstream and
+        # ships no interposer: record the absence instead of fetching
+        # fork-only files from a repository that does not contain the
+        # commit (the fork fetch below would 404).
+        return {
+            "upstream": declared["upstream"],
+            "commit": source,
+            "present": False,
+        }
     cache.mkdir(parents=True, exist_ok=True)
     cached = cache / source
     if not cached.exists():

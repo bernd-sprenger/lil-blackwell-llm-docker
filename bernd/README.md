@@ -90,19 +90,19 @@ engine-driven path glm53-flash uses) is NOT preserved by this: deployments
 needing it stay on an image with the `+lil` bundle.
 
 ```
-# On Babbler, from a clean checkout of this branch:
-bernd/stock-lmcache/build_bundle.sh /opt/data/build/lil-image/lmcache-stock
+`bernd/stock-lmcache/build_bundle.sh /opt/data/build/lil-image/lmcache-stock
 LMCACHE_BUNDLE=/opt/data/build/lil-image/lmcache-stock/bundle \
-IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261220-cb2 \
+IMAGE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2 \
 PUSH=1 bernd/build.sh
 ```
 
 `LMCACHE_BUNDLE` drops the assembly's lmcache component from the download and
 substitutes the bundle; the `BUILT` record and the image description carry the
 stock provenance (tag, commit, `package_version` like
-`0.5.7.post1+bernd.cu134.g<sha>`). The cuMem interposer source that
-`build_local_runtime.py` packages is pre-seeded into the component cache from
-upstream at the same commit, because LIL's fetcher only knows its own fork.
+`0.5.7.post1+bernd.cu134.g<sha>`). The fork-only cuMem interposer is marked
+absent through the whole chain (`prepare_runtime_auxiliary` →
+`install_runtime_auxiliary` → `verify_qwen38_runtime`, all keyed on the
+bundle's `source.upstream` marker): no fork files leak in, no fetch 404s.
 
 Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
 
