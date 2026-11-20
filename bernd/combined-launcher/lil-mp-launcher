@@ -10,10 +10,11 @@
 # /dev/shm and one lifecycle; the server is a child of the entrypoint.
 #
 # Flow: start `lmcache server` as a background child (L1 = host RAM, L2 =
-# NVMe under /l2), wait for its HTTP health endpoint, then exec `vllm
-# serve` with the caller's args plus a LMCacheMPConnector pointing at
-# tcp://localhost:$PORT — unless the caller passes their own
-# --kv-transfer-config (then theirs wins; the server stays up regardless).
+# NVMe under /l2), wait for its monitor endpoint (HTTP :$METRICS_PORT
+# /metrics), then exec `vllm serve` with the caller's args plus a
+# LMCacheMPConnector pointing at tcp://localhost:$PORT — unless the caller
+# passes their own --kv-transfer-config (then theirs wins; the server
+# stays up regardless).
 #
 # Knobs (environment):
 #   LMCACHE_L1_GB         L1 (host RAM) tier size, GiB   (default 32)
@@ -44,10 +45,12 @@ lmcache server \
 LMCACHE_PID=$!
 trap 'kill "$LMCACHE_PID" 2>/dev/null || true' EXIT
 
-# Wait for the server's HTTP health endpoint so the engine never races it.
+# Wait for the server before the engine connects, so registration never
+# races it. The monitor (HTTP :$METRICS_PORT) starts with the server; it
+# has no /health path, /metrics is its real endpoint.
 READY=0
 for _ in $(seq 1 60); do
-    if curl -sf "http://127.0.0.1:$METRICS_PORT/health" >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:$METRICS_PORT/metrics" >/dev/null 2>&1; then
         READY=1
         break
     fi
