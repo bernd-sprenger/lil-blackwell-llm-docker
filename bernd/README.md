@@ -104,6 +104,22 @@ absent through the whole chain (`prepare_runtime_auxiliary` →
 `install_runtime_auxiliary` → `verify_qwen38_runtime`, all keyed on the
 bundle's `source.upstream` marker): no fork files leak in, no fetch 404s.
 
+# Babbler's logind has no linger, so a build driver run over ssh gets its
+# user scope reaped minutes into the run. Run the driver in a detached
+# container instead (daemon-owned, survives disconnects):
+#
+#   docker run -d --name cb2-builder \
+#     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+#     -v /var/run/docker.sock:/var/run/docker.sock \
+#     -v /opt/data/build:/build -v /home/bernd/.docker:/root/.docker -w /build \
+#     docker:27 sh -c "apk add -q --no-cache bash git python3 jq curl unzip zstd coreutils tar \
+#                      && bash /build/cb2-stageb.sh"
+#
+# coreutils/tar are required (busybox sha256sum lacks --quiet; busybox tar
+# lacks --sort/--numeric-owner), and safe.directory=* is required because
+# the recipe checkout is host-user-owned while the container runs as root.
+# Watch it with: docker logs -f cb2-builder
+
 Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
 
 ## Updating

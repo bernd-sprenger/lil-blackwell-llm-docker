@@ -74,6 +74,7 @@ docker buildx inspect --bootstrap "$BUILDER" >/dev/null
 
 echo "-- Building the wheel in the pinned foundation"
 docker buildx build \
+    --progress=plain \
     --builder "$BUILDER" \
     --file "$SRC/ci/lil_wheels/Dockerfile" \
     --build-arg "BUILDER_IMAGE=$(lock_value builder.image)" \
