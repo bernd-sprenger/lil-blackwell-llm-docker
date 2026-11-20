@@ -18,16 +18,19 @@
 #
 # Knobs (environment):
 #   LMCACHE_L1_GB         L1 (host RAM) tier size, GiB   (default 32)
-#   LMCACHE_L2_GB         L2 (NVMe) tier cap, GiB        (default 160)
+#   LMCACHE_L2_GB         L2 (NVMe) capacity, GiB        (default 160)
+#   LMCACHE_L2_PATH       L2 directory, mounted by the
+#                         deployment                     (default /l2)
 #   LMCACHE_PORT          server ZMQ port                (default 5555)
 #   LMCACHE_METRICS_PORT  server HTTP port (health)      (default 8080)
 #
-# The deployment mounts the NVMe tier at /l2 (LMCACHE_LOCAL_DISK below)
-# and sizes the container's shm to hold the transfer buffers.
+# The deployment mounts the NVMe tier at /l2 and sizes the container's
+# shm to hold the transfer buffers.
 set -euo pipefail
 
 L1_GB="${LMCACHE_L1_GB:-32}"
 L2_GB="${LMCACHE_L2_GB:-160}"
+L2_PATH="${LMCACHE_L2_PATH:-/l2}"
 PORT="${LMCACHE_PORT:-5555}"
 METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
 
@@ -35,13 +38,21 @@ METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
 # Chunk size is a minimum; the connector negotiates up to the engine's
 # attention page. Object-group separation stays on (default): hybrid GDN
 # recurrent states cache as their own object group.
-LMCACHE_LOCAL_DISK=/l2 \
-LMCACHE_MAX_LOCAL_DISK_SIZE="$L2_GB" \
+#
+# L2: without --l2-adapter the server has NO disk tier — the L2Eviction-
+# Controller starts regardless and L1 eviction just drops objects (cost
+# us a 97.1s "from-disk" reload that was really a cold re-prefill).
+# fs_native with an eviction block bounds usage at max_capacity_gb
+# (LRU, watermark 0.8 / ratio 0.2 defaults). Stores go to ALL tiers by
+# default (--l2-store-policy default), so every KV lands on NVMe too.
+L2_SPEC="{\"type\":\"fs_native\",\"base_path\":\"$L2_PATH\",\
+\"max_capacity_gb\":$L2_GB,\"eviction\":{\"eviction_policy\":\"LRU\"}}"
 lmcache server \
     --host 127.0.0.1 --port "$PORT" \
     --supported-transfer-mode auto \
     --l1-size-gb "$L1_GB" \
-    --eviction-policy LRU &
+    --eviction-policy LRU \
+    --l2-adapter "$L2_SPEC" &
 LMCACHE_PID=$!
 trap 'kill "$LMCACHE_PID" 2>/dev/null || true' EXIT
 
