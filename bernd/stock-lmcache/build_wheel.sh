@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 # Build and normalize LMCache native extensions for the declared foundation.
 # From local-inference-lab/LMCache ci/lil_wheels/build_wheel.sh (commit
-# dde2c874); the only change is the local version tag (+bernd, not +lil).
+# dde2c874); local changes: the +bernd local version tag, the
+# LMCACHE_BASE_VERSION override, and the stale-build purge below.
 set -euo pipefail
 
 mkdir -p /wheelhouse
+# The buildkit cache mount at /src/lmcache/build survives across builds.
+# setuptools' incremental build_py overlays today's sources but NEVER
+# removes files an older tree had — a changed-source rebuild silently
+# packages the union of both trees (observed: the consolidation build
+# shipped 0.5.7.post1-era l1_manager/ and quality_bench/ modules next to
+# the Aug-30 module layout, producing ImportError mid-boot). Purge the
+# stale lib/temp trees; the native .o cache dir value is gone either way,
+# correctness wins.
+rm -rf build/lib.* build/temp.* build/bdist.* build/wheel
+
 # Shallow branch clones carry no tags, and setuptools_scm then reports
 # 0.1.dev1 — below every feature gate. Pass a base from the outside
 # (nearest release train the content derives from); empty = git-derived.
