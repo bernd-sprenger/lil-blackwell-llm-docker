@@ -17,6 +17,9 @@
 #   LMCACHE_REF     branch or tag to clone (default: LMCACHE_TAG)
 #   LMCACHE_COMMIT  optional commit pin inside LMCACHE_REF; when set the
 #                   clone verifies the resolved head is exactly this sha
+#   LMCACHE_BASE_VERSION  version base for shallow branch clones, where
+#                   setuptools_scm has no reachable tag (else 0.1.dev1,
+#                   which sorts below every feature gate); empty = derive
 #   WORK            build tree (default /opt/data/build/lil-image, shared
 #                   with bernd/build.sh so the component cache is reused)
 #
@@ -100,6 +103,7 @@ docker buildx build \
     --build-arg "UV_SHA256=$(lock_value uv.sha256)" \
     --build-arg "SOURCE_COMMIT=${SOURCE_COMMIT}" \
     --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" \
+    --build-arg "LMCACHE_BASE_VERSION=${LMCACHE_BASE_VERSION:-}" \
     --target export \
     --output "type=local,dest=${OUTPUT_DIR}/raw" \
     "$SRC"
@@ -111,7 +115,11 @@ metadata=$(unzip -p "$wheel" '*/METADATA')
 package_name=$(awk -F': ' '$1 == "Name" {print $2; exit}' <<<"$metadata}")
 package_version=$(awk -F': ' '$1 == "Version" {print $2; exit}' <<<"$metadata}")
 test "$package_name" = lmcache
-unzip -Z1 "$wheel" | grep -Eq '^lmcache/cuda_ops\.[^/]*\.so$'
+# Consume the whole listing before grepping: `unzip -Z1 | grep -q`
+# races (grep exits at the first match, unzip takes SIGPIPE, and
+# pipefail turns that into a build failure).
+listing=$(unzip -Z1 "$wheel")
+grep -Eq '^lmcache/cuda_ops\.[^/]*\.so$' <<<"$listing"
 digest=$(sha256sum "$wheel" | awk '{print $1}')
 file=$(basename "$wheel")
 echo "-- Wheel: $file"

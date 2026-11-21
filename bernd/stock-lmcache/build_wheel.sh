@@ -5,8 +5,15 @@
 set -euo pipefail
 
 mkdir -p /wheelhouse
-base_version=$(/build-venv/bin/python -m setuptools_scm | tr -d '[:space:]')
-base_version=${base_version%%+*}
+# Shallow branch clones carry no tags, and setuptools_scm then reports
+# 0.1.dev1 — below every feature gate. Pass a base from the outside
+# (nearest release train the content derives from); empty = git-derived.
+if [[ -n "${LMCACHE_BASE_VERSION:-}" ]]; then
+    base_version="$LMCACHE_BASE_VERSION"
+else
+    base_version=$(/build-venv/bin/python -m setuptools_scm | tr -d '[:space:]')
+    base_version=${base_version%%+*}
+fi
 package_version="${base_version}+bernd.cu134.g${SOURCE_COMMIT:0:12}"
 
 env -u PYTHONPATH \

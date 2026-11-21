@@ -3,6 +3,11 @@
 # dde2c874, branch dev). The build context is the LMCache source checkout
 # with this directory's files staged under ci/lil_wheels/ (build_bundle.sh
 # does the staging), so the COPY paths below work unchanged.
+#
+# Local change (rmw): LMCACHE_BASE_VERSION overrides the setuptools_scm
+# base version for shallow branch clones, where no tag is reachable and
+# setuptools_scm falls back to 0.1.dev1 (which sorts below every release
+# gate). Empty = derive from git as before.
 
 ARG UV_IMAGE
 ARG BUILDER_IMAGE
@@ -12,6 +17,7 @@ FROM ${BUILDER_IMAGE} AS wheels
 ARG BUILD_JOBS=12
 ARG SOURCE_COMMIT
 ARG SOURCE_DATE_EPOCH
+ARG LMCACHE_BASE_VERSION
 ARG UV_SHA256
 ENV PATH=/build-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TORCH_CUDA_ARCH_LIST=12.0a \
@@ -45,6 +51,7 @@ RUN --mount=type=cache,id=lil-lmcache-native-cu134-torch214-sm120,target=/src/lm
     --mount=type=cache,id=lil-wheel-uv,target=/root/.cache/uv,sharing=locked \
     SOURCE_COMMIT="${SOURCE_COMMIT}" \
     SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \
+    LMCACHE_BASE_VERSION="${LMCACHE_BASE_VERSION}" \
     ci/lil_wheels/build_wheel.sh
 
 FROM scratch AS export
