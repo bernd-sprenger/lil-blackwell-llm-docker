@@ -12,6 +12,11 @@
 #
 # Usage (on Babbler): bernd/stock-lmcache/build_bundle.sh [OUTPUT_DIR]
 #   LMCACHE_TAG     upstream tag to build (default v0.5.7.post1)
+#   LMCACHE_REPO    repository to clone (default the upstream repo; set to
+#                   a fork for consolidation-branch builds)
+#   LMCACHE_REF     branch or tag to clone (default: LMCACHE_TAG)
+#   LMCACHE_COMMIT  optional commit pin inside LMCACHE_REF; when set the
+#                   clone verifies the resolved head is exactly this sha
 #   WORK            build tree (default /opt/data/build/lil-image, shared
 #                   with bernd/build.sh so the component cache is reused)
 #
@@ -25,6 +30,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="$SCRIPT_DIR"
 OUTPUT_DIR=${1:-"$SCRIPT_DIR/dist/lmcache-stock"}
 LMCACHE_TAG="${LMCACHE_TAG:-v0.5.7.post1}"
+LMCACHE_REPO="${LMCACHE_REPO:-https://github.com/LMCache/LMCache.git}"
+LMCACHE_REF="${LMCACHE_REF:-$LMCACHE_TAG}"
+LMCACHE_COMMIT="${LMCACHE_COMMIT:-}"
 WORK="${WORK:-/opt/data/build/lil-image}"
 
 for cmd in docker git jq python3 curl unzip; do
@@ -43,9 +51,19 @@ SRC="$OUTPUT_DIR/lmcache-src"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/raw" "$OUTPUT_DIR/bundle/wheels" "$WORK/cache/components"
 
-echo "-- Cloning upstream LMCache at $LMCACHE_TAG"
-git clone -q --branch "$LMCACHE_TAG" --depth 1 \
-    https://github.com/LMCache/LMCache.git "$SRC"
+echo "-- Cloning LMCache at $LMCACHE_REF from $LMCACHE_REPO"
+git clone -q --branch "$LMCACHE_REF" --depth 1 "$LMCACHE_REPO" "$SRC"
+if [[ -n "$LMCACHE_COMMIT" ]]; then
+    # Pin the exact commit even when the ref has moved. GitHub allows
+    # fetching arbitrary SHAs; keep the clone shallow either way.
+    git -C "$SRC" fetch -q --depth 1 origin "$LMCACHE_COMMIT"
+    git -C "$SRC" checkout -q --detach FETCH_HEAD
+    ACTUAL=$(git -C "$SRC" rev-parse HEAD)
+    if [[ "$ACTUAL" != "$LMCACHE_COMMIT" ]]; then
+        echo "error: resolved $ACTUAL, expected $LMCACHE_COMMIT" >&2
+        exit 1
+    fi
+fi
 SOURCE_COMMIT=$(git -C "$SRC" rev-parse HEAD)
 SOURCE_TREE=$(git -C "$SRC" rev-parse 'HEAD^{tree}')
 SOURCE_DATE_EPOCH=$(git -C "$SRC" show -s --format=%ct HEAD)
@@ -102,6 +120,8 @@ jq -n \
     --arg status "research-only" \
     --arg repository "https://github.com/bernd-sprenger/lil-blackwell-llm-docker" \
     --arg tag "${LMCACHE_TAG}" \
+    --arg repo "${LMCACHE_REPO}" \
+    --arg ref "${LMCACHE_REF}" \
     --arg commit "${SOURCE_COMMIT}" \
     --arg tree "${SOURCE_TREE}" \
     --arg package_version "${package_version}" \
@@ -114,9 +134,10 @@ jq -n \
     --arg pytorch_commit "$(lock_value pytorch.commit)" \
     --arg cuda_arch_list "$(lock_value cuda.arch-list)" \
     '{schema: "local-inference-lmcache-wheel-release/v1", status: $status,
-      scope: "STOCK upstream LMCache, rebuilt for the declared ABI by bernd/stock-lmcache in bernd-sprenger/lil-blackwell-llm-docker",
+      scope: "STOCK-lineage LMCache, rebuilt for the declared ABI by bernd/stock-lmcache in bernd-sprenger/lil-blackwell-llm-docker",
       source: {upstream: "https://github.com/LMCache/LMCache.git",
-        tag: $tag, commit: $commit, tree: $tree, recipe: $repository},
+        fork: $repo, ref: $ref, tag: $tag, commit: $commit, tree: $tree,
+        recipe: $repository},
       package_version: $package_version,
       release_tag: ("lmcache-cu134-sm120-stock-bernd-" + $commit),
       runtime: {builder_image: $builder_image, python: $python, cuda: $cuda,
