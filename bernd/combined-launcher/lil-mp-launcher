@@ -21,6 +21,11 @@
 #   LMCACHE_L2_GB         L2 (NVMe) capacity, GiB        (default 160)
 #   LMCACHE_L2_PATH       L2 directory, mounted by the
 #                         deployment                     (default /l2)
+#   LMCACHE_CHUNK_TOKENS  server chunk size in tokens    (default 4096;
+#                         must be a multiple of the engine's
+#                         scheduler block x DCP — the upstream
+#                         connector negotiates upward, the
+#                         consolidation connector fails closed)
 #   LMCACHE_PORT          server ZMQ port                (default 5555)
 #   LMCACHE_METRICS_PORT  server HTTP port (health)      (default 8080)
 #
@@ -31,6 +36,7 @@ set -euo pipefail
 L1_GB="${LMCACHE_L1_GB:-32}"
 L2_GB="${LMCACHE_L2_GB:-160}"
 L2_PATH="${LMCACHE_L2_PATH:-/l2}"
+CHUNK="${LMCACHE_CHUNK_TOKENS:-4096}"
 PORT="${LMCACHE_PORT:-5555}"
 METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
 
@@ -56,6 +62,7 @@ L2_SPEC="{\"type\":\"fs_native\",\"base_path\":\"$L2_PATH\",\
 \"max_capacity_gb\":$L2_GB,\"eviction\":{\"eviction_policy\":\"LRU\"}}"
 /opt/venv/bin/python3 /usr/local/bin/lil-mp-server.py \
     --host 127.0.0.1 --port "$PORT" \
+    --chunk-size "$CHUNK" \
     --supported-transfer-mode auto \
     --l1-size-gb "$L1_GB" \
     --eviction-policy LRU \
