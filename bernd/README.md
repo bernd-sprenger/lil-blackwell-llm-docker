@@ -111,14 +111,32 @@ bundle's `source.upstream` marker): no fork files leak in, no fetch 404s.
 #   docker run -d --name cb2-builder \
 #     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
 #     -v /var/run/docker.sock:/var/run/docker.sock \
-#     -v /opt/data/build:/build -v /home/bernd/.docker:/root/.docker -w /build \
-#     docker:27 sh -c "apk add -q --no-cache bash git python3 jq curl unzip zstd coreutils tar \
-#                      && bash /build/cb2-stageb.sh"
+#     -v /opt/data/build:/opt/data/build -v /home/bernd/.docker:/root/.docker \
+#     -w /opt/data/build docker:27 sh -c "..."
 #
-# coreutils/tar are required (busybox sha256sum lacks --quiet; busybox tar
-# lacks --sort/--numeric-owner), and safe.directory=* is required because
-# the recipe checkout is host-user-owned while the container runs as root.
-# Watch it with: docker logs -f cb2-builder
+# The full lesson set, each one a real failed build:
+#  1. Detach (no linger) — host user scopes die with the ssh session.
+#  2. docker:27's busybox tar/sha256sum lack --sort/--numeric-owner/--quiet:
+#     apk add coreutils tar, plus git safe.directory='*' (the recipe
+#     checkout is host-user-owned, the container runs as root).
+#  3. Mount the build tree at its OWN host path (/opt/data/build at
+#     /opt/data/build, not at /build): bind sources and buildx contexts
+#     are resolved by the HOST daemon, and a container-local path is
+#     invisible to it ("bind source path does not exist").
+#  4. TMPDIR must live under that shared tree for the same reason —
+#     build_runtime_image.py's final verify bind-mounts a tempdir.
+#  5. `unzip -Z1 | grep -q` is a SIGPIPE race under pipefail: consume
+#     the listing whole, then grep (see build_bundle.sh).
+#  6. Never reuse a source-pinned wheel build without purging stale
+#     build trees — see the stale-build purge in build_wheel.sh; the
+#     buildkit cache mount at /src/lmcache/build otherwise unions two
+#     source trees into one wheel.
+#  7. build.sh alone produces the ASSEMBLY image (LIL's entrypoint);
+#     deployments need bernd/build_combined.sh on top — chain it (see
+#     the export in this directory's stage scripts), or the first
+#     deploy dies with exit 127.
+#
+# Watch a detached driver with: docker logs -f <name>
 
 Rollback everywhere is the pin: point `IMAGE` back at a `+lil` build.
 
