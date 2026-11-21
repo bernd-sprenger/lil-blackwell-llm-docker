@@ -39,6 +39,13 @@ METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
 # attention page. Object-group separation stays on (default): hybrid GDN
 # recurrent states cache as their own object group.
 #
+# Launched through lil-mp-server.py — a direct re-dispatch of what the
+# `lmcache server` command does (same argparse groups, same
+# run_http_server entrypoint) — because the consolidation-tip CLI dies
+# in command auto-discovery on a mid-refactor bench module, and the CLI
+# package deliberately re-raises import errors. Back to plain
+# `lmcache server` once the import is fixed upstream.
+#
 # L2: without --l2-adapter the server has NO disk tier — the L2Eviction-
 # Controller starts regardless and L1 eviction just drops objects (cost
 # us a 97.1s "from-disk" reload that was really a cold re-prefill).
@@ -47,7 +54,7 @@ METRICS_PORT="${LMCACHE_METRICS_PORT:-8080}"
 # default (--l2-store-policy default), so every KV lands on NVMe too.
 L2_SPEC="{\"type\":\"fs_native\",\"base_path\":\"$L2_PATH\",\
 \"max_capacity_gb\":$L2_GB,\"eviction\":{\"eviction_policy\":\"LRU\"}}"
-lmcache server \
+/opt/venv/bin/python3 /usr/local/bin/lil-mp-server.py \
     --host 127.0.0.1 --port "$PORT" \
     --supported-transfer-mode auto \
     --l1-size-gb "$L1_GB" \

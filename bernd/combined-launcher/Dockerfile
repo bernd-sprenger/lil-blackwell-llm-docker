@@ -9,5 +9,6 @@ ARG BASE=ghcr.io/bernd-sprenger/lil-vllm:kk-20261120-cb2
 # image itself; re-layering over it is idempotent (same launcher, re-COPY).
 FROM ${BASE}
 COPY lil-mp-launcher /usr/local/bin/lil-mp-launcher
-RUN chmod 0755 /usr/local/bin/lil-mp-launcher
+COPY lil-mp-server.py /usr/local/bin/lil-mp-server.py
+RUN chmod 0755 /usr/local/bin/lil-mp-launcher /usr/local/bin/lil-mp-server.py
 ENTRYPOINT ["/usr/local/bin/lil-mp-launcher"]
